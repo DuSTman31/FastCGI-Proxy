@@ -14,10 +14,13 @@ using std::map;
 struct sockPair{
   int s1;
   int s2;
+  char *inBuf;
+  char *outBuf;
 };
 
 map<int, sockPair*> sockPairs;
 
+const unsigned int bufSize = 10240;
 
 bool setNonBlock(int fh)
 {
@@ -71,7 +74,9 @@ int connected(int epollSock)
 		  sockPair *socks = new sockPair;
 		  socks->s1 = inSock;
 		  socks->s2 = outSock;
-		  
+		  socks->inBuf = new char[bufSize];
+		  socks->outBuf = new char[bufSize];
+	  
 		  sockPairs[inSock] = socks;
 		  sockPairs[outSock] = socks;
 
@@ -98,28 +103,67 @@ int connected(int epollSock)
 		  if(ap->s1 == events[i].data.fd)
 		    {
 		      int bytesRead = 0;
-		      char *buf = new char[1024];
-		      bytesRead = read(ap->s1, buf, 1024);
-		      if(bytesRead == -1)
+		      char *buf = ap->inBuf;
+		      bytesRead = read(ap->s1, buf, bufSize);
+		      if(bytesRead > 0)
 			{
-			  free(buf);
+			  send(ap->s2, buf, bytesRead, 0);
 			}
-		      send(ap->s2, buf, bytesRead, 0);
+		      else
+                        {
+                          if(bytesRead == 0)
+			    {
+			      sockPair *ap = sockPairs[events[i].data.fd];
 
-		      delete[] buf;
+			      epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s1, NULL);
+			      epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s2, NULL);
+
+			      sockPairs.erase(ap->s1);
+			      sockPairs.erase(ap->s2);
+
+			      close(ap->s1);
+			      close(ap->s2);
+
+			      delete[] ap->inBuf;
+			      delete[] ap->outBuf;
+
+			      delete ap;
+
+			    }
+                        }
 		    }
 		  else
 		    {
 		      int bytesRead = 0;
-		      char *buf = new char[1024];
-		      bytesRead = read(ap->s2, buf, 1024);
-		      if(bytesRead == -1)
+		      char *buf = new char[bufSize];
+		      bytesRead = read(ap->s2, buf, bufSize);
+		      if(bytesRead > 0)
 			{
-			  free(buf);
+			  send(ap->s1, buf, bytesRead, 0);
 			}
-		      send(ap->s1, buf, bytesRead, 0);
-		      
-		      delete[] buf;
+                      else
+                        {
+			  if(bytesRead == 0)
+			    {
+			      sockPair *ap = sockPairs[events[i].data.fd];
+			      
+			      epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s1, NULL);
+			      epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s2, NULL);
+			      
+			      sockPairs.erase(ap->s1);
+			      sockPairs.erase(ap->s2);
+			      
+			      close(ap->s1);
+			      close(ap->s2);
+			      
+			      delete[] ap->inBuf;
+			      delete[] ap->outBuf;
+			      
+			      delete ap;
+			    }
+                        }
+	      
+
 		    }
 
 		}
@@ -128,13 +172,16 @@ int connected(int epollSock)
 		  sockPair *ap = sockPairs[events[i].data.fd];
 
 		  epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s1, NULL);
-		  epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s1, NULL);
+		  epoll_ctl(epollSock, EPOLL_CTL_DEL, ap->s2, NULL);
 
 		  sockPairs.erase(ap->s1);
 		  sockPairs.erase(ap->s2);
 
 		  close(ap->s1);
 		  close(ap->s2);
+
+		  delete[] ap->inBuf;
+		  delete[] ap->outBuf;
 
 		  delete ap;
 		}
