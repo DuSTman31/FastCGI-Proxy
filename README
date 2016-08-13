@@ -1,0 +1,15 @@
+
+ Proxy for FastCGI
+
+Rationale
+
+  Some fastcgi executables, such as HHVM or php-fpm, are intended to be run as a daemon system startup. However, web servers that use fastcgi, such as Apache with mod_fcgid, expect to run a program as a sub-process to handle fastcgi traffic. 
+
+  To allow mod_fcgid to connect to a background fastcgi daemon, I created a small proxy process. This would be something that mod_fcgid could run, and would relay the fastcgi traffic to an existing unix domain socket. 
+
+  This proxy would ideally be very low resource usage, so the resource usage of doing it this way should be negligible under most loads..
+
+How to build
+
+
+  Simply execute "make". You will need a c++ compiler installed on your system. This will create an executable called "prox" which you can specify as your FcgidWrapper field in your apache configuration.
