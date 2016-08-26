@@ -13,6 +13,8 @@ How to build
 
   Simply execute "make". You will need a c++ compiler installed on your system. This will create an executable called "prox" which you can specify as your FcgidWrapper field in your apache configuration.
 
+  If you want to connect to a daemon on something other than port 9001, you will need to edit the prox.cpp file prior to compilation. There is an option to connect to a UNIX domain socket instead, should your HHVM/php-fpm daemon be on one of those. 
+
 To Do
 
   Take port/unix socket address to connect to from command line.

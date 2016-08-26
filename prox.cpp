@@ -1,6 +1,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/un.h>
 #include <arpa/inet.h>
 #include <cstdio>
 #include <unistd.h>
@@ -22,6 +23,14 @@ map<int, sockPair*> sockPairs;
 
 const unsigned int bufSize = 10240;
 
+
+// Addresses for connection.
+const bool unsock = false; // Set true to connect to daemon via unix domain socket. Else uses ip.
+const char *unix_path = "/var/run/hhvm";  // Endpoint address for unix socket connection
+const int inport = 9001;
+const int32_t inaddr = INADDR_LOOPBACK;
+
+
 bool setNonBlock(int fh)
 {
   int flags = fcntl(fh, F_GETFL, 0);
@@ -30,6 +39,78 @@ bool setNonBlock(int fh)
   return (fcntl(fh, F_SETFL, flags) == 0) ? true : false;
 }
 
+
+int connect_un()
+{
+  int status = 0;
+  sockaddr_un addr;
+  int outSock = socket(AF_UNIX, SOCK_STREAM, 0);
+
+  if(outSock == -1)
+    {
+      printf("Error creating socket.\n");
+      return -1;
+    }
+
+  if(strlen(unix_path) > 108)
+    {
+      printf("Path length exceeds max unix socket length");
+      return -1;
+    }
+		  
+  addr.sun_family = AF_UNIX;
+  strcpy(addr.sun_path, unix_path);
+		  
+  status = connect(outSock, (struct sockaddr*)&addr, sizeof(addr));
+  if(status == -1)
+    {
+      printf("Could not connect.\n");
+      return -2;
+    }
+
+  setNonBlock(outSock);
+  return outSock;
+}
+
+int connect_in()
+{
+  int status = 0;
+  sockaddr_in addr;
+  int outSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+  if(outSock == -1)
+    {
+      printf("Error creating socket.\n");
+      return -1;
+    }
+		  
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(inport);
+  addr.sin_addr.s_addr = htonl(inaddr);
+		  
+		  
+  status = connect(outSock, (struct sockaddr*)&addr, sizeof(addr));
+  if(status == -1)
+    {
+      printf("Could not connect.\n");
+      return -2;
+    }
+
+  setNonBlock(outSock);
+  return outSock;
+}
+
+int connect()
+{
+  if(unsock)
+    {
+      return connect_un();
+    }
+  else
+    {
+      return connect_in();
+    }
+}
 
 int connected(int epollSock)
 {
@@ -46,30 +127,15 @@ int connected(int epollSock)
 	    {
 	      if(events[i].events | EPOLLIN)
 		{
-		  sockaddr_in addr;
 		  int inSock = accept(STDIN_FILENO, NULL, NULL);
-		  int outSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		  int outSock = connect();
 
-		  if(outSock == -1)
+		  if(outSock < 0)
 		    {
-		      printf("Error creating socket.\n");
-		      return 1;
-		    }
-		  
-		  addr.sin_family = AF_INET;
-		  addr.sin_port = htons(9001);
-		  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-		  
-		  
-		  status = connect(outSock, (struct sockaddr*)&addr, sizeof(addr));
-		  if(status == -1)
-		    {
-		      printf("Could not connect.\n");
-		      return 2;
+		      return -1;
 		    }
 
 		  setNonBlock(inSock);
-		  setNonBlock(outSock);
 		  
 		  sockPair *socks = new sockPair;
 		  socks->s1 = inSock;
